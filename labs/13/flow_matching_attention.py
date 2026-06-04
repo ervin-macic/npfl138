@@ -188,7 +188,7 @@ class UNet(torch.nn.Module):
     """The U-Net architecture used in the flow matching model."""
     def __init__(self, channels: int, stage_blocks: int, stages: int, attention_stages: int, attention_heads: int):
         super().__init__()
-        # TODO: When processing the input images and the input times, start by
+        # TODO(flow_matching): When processing the input images and the input times, start by
         # passing the times through the `SinusoidalEmbedding` layer with
         # dimension of `channels`; the result is then passed to all later layers
         # that require the time embedding.
