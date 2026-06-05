@@ -571,7 +571,8 @@ class TrainableModule(torch.nn.Module):
         items by [unpack_batch][npfl138.TrainableModule.unpack_batch]), or, if `predict_step`
         is a generator function, an iterable of individual predicted items (i.e., an unpacked batch;
         in this case, calls to [predict][npfl138.TrainableModule.predict] with `whole_batches=True`
-        and to [predict_tensor][npfl138.TrainableModule.predict_tensor] raise an error).
+        and to [predict_tensor][npfl138.TrainableModule.predict_tensor] construct batches by stacking
+        individual items produced by `predict_step`).
 
         Parameters:
           xs: The input batch to the model, either a single tensor or a tensor structure.
