@@ -553,7 +553,6 @@ class TrainableModule(torch.nn.Module):
         assert self.device is not None, "No device has been set for the TrainableModule, run configure first."
 
         predict_step_is_generator = inspect.isgeneratorfunction(self.predict_step)
-
         self.eval()
         for batch in ProgressLogger(dataloader, "Prediction", console):
             xs = validate_batch_input(batch, with_labels=data_with_labels)
