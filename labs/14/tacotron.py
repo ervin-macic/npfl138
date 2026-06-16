@@ -65,7 +65,7 @@ class Encoder(torch.nn.Module):
         super().__init__()
         # TODO: Create the required encoder layers. The architecture of the encoder is as follows:
         # - Convert the texts to embeddings using `torch.nn.Embedding(num_characters, args.encoder_dim)`.
-        # - Pass the result throught a `torch.nn.Dropout(args.dropout)` layer.
+        # - Pass the result through a `torch.nn.Dropout(args.dropout)` layer.
         # - After moving the channels to the front (i.e., dim=1), pass the result through
         #   `args.encoder_layers` number of layers, each consisting of
         #   - 1D convolution with `args.encoder_dim` channels, kernel size 5, padding 2, and no bias,
@@ -188,7 +188,7 @@ class Decoder(torch.nn.Module):
     def forward(self, context: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         # TODO: Implement a single step of the decoder.
         #
-        # - First run the `self.decoder` on the concatenation the stored next decoder input and
+        # - First run the `self.decoder` on the concatenation of the stored next decoder input and
         #   the given context vector, using and updating the stored decoder RNN state and memory cell values.
         # - Then pass the computed decoder RNN state through the `self.output_layer` to obtain
         #   the predicted `mel_frame` for the current step.
