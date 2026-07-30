@@ -41,7 +41,7 @@ def main(args: argparse.Namespace) -> dict[str, float]:
     dev = torch.utils.data.DataLoader(Dataset(mnist.dev), batch_size=args.batch_size)
 
     # Create the model.
-    model = torch.nn.Sequential()
+    model = torch.nn.Sequential(torch.nn.Flatten())
 
     # TODO: Finish the model. Namely:
     # - start by adding the `torch.nn.Flatten()` layer;
@@ -49,8 +49,29 @@ def main(args: argparse.Namespace) -> dict[str, float]:
     #   `torch.nn.Linear()`, each with `args.hidden_layer_size` neurons and followed by
     #   a specified `args.activation`, allowing "none", "relu", "tanh", "sigmoid";
     # - finally, add a fully connected output layer with `MNIST.LABELS` units.
-    ...
+    activation = None
+    match args.activation:
+        case "relu":
+            activation = torch.nn.ReLU()
+        case "tanh":
+            activation = torch.nn.Tanh()
+        case "sigmoid":
+            activation = torch.nn.Sigmoid()
+        case "none":
+            activation = None
 
+    input_dim = MNIST.C * MNIST.H * MNIST.W
+    for idx in range(args.hidden_layers):
+        if idx == 0:
+            model.append(torch.nn.Linear(input_dim, args.hidden_layer_size))
+        else:
+            model.append(torch.nn.Linear(args.hidden_layer_size, args.hidden_layer_size))
+        
+        if activation:
+            model.append(activation)
+
+    in_features = args.hidden_layer_size if args.hidden_layers > 0 else input_dim
+    model.append(torch.nn.Linear(in_features, MNIST.LABELS))
     # Create the TrainableModule and configure it for training.
     model = npfl138.TrainableModule(model)
 
