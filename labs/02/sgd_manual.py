@@ -36,8 +36,12 @@ class Model(torch.nn.Module):
         # - _W2, which is a parameter of size `[args.hidden_layer_size, MNIST.LABELS]`,
         #   initialized to `torch.randn` value with standard deviation 0.1,
         # - _b2, which is a parameter of size `[MNIST.LABELS]` initialized to zeros.
-        self._W2 = ...
-        self._b2 = ...
+        self._W2 = torch.nn.Parameter(
+            torch.randn(args.hidden_layer_size, MNIST.LABELS) * 0.1
+        )
+        self._b2 = torch.nn.Parameter(
+            torch.zeros(MNIST.LABELS)
+        )
 
     def forward(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # TODO(sgd_backpropagation): Define the computation of the network. Notably:
@@ -49,11 +53,16 @@ class Model(torch.nn.Module):
         # - then multiply it by `self._W1` and then add `self._b1`,
         # - apply `torch.tanh`,
         # - finally, multiply the result by `self._W2` and then add `self._b2`.
-
+        inputs = inputs.to(torch.float32)
+        inputs = inputs / 255 
+        inputs = inputs.reshape([inputs.shape[0], -1])
+        x = inputs @ self._W1 + self._b1
+        x = hidden = torch.tanh(x)
+        logits = x @ self._W2 + self._b2
         # TODO: In order to support manual gradient computation, you should
         # return not only the output layer, but also the hidden layer after applying
         # tanh, and the input layer after reshaping.
-        return ..., ..., ...
+        return inputs, hidden, logits
 
     def train_epoch(self, dataset: MNIST.Dataset) -> None:
         self.train()
@@ -68,8 +77,9 @@ class Model(torch.nn.Module):
             # This is needed, because the data is currently on CPU, but the model might
             # be on a GPU. You can move the data using the `.to(device)` method, and you
             # can obtain the device of the model using for example `self._W1.device`.
-            images = batch["images"].to(...)
-            labels = batch["labels"].to(...)
+            device = self._W1.device
+            images = batch["images"].to(device)
+            labels = batch["labels"].to(device)
 
             # TODO: Contrary to `sgd_backpropagation`, the goal here is to compute
             # the gradient manually, without calling `.backward()`. ReCodEx disables
@@ -77,10 +87,10 @@ class Model(torch.nn.Module):
             #
             # Start by computing the input layer, the hidden layer, and the output layer
             # of the batch images using `self(...)`.
-            inputs, hidden, logits = ...
+            inputs, hidden, logits = self.forward(batch["images"])
 
             # TODO(sgd_backpropagation): Compute the probabilities of the batch images using `torch.softmax`.
-            probabilities = ...
+            P = torch.softmax(logits, dim=1)
 
             # TODO: Compute the gradient of the loss with respect to all
             # parameters. The loss is computed as in `sgd_backpropagation`.
@@ -93,8 +103,30 @@ class Model(torch.nn.Module):
             # or with
             #   `torch.einsum("bi,bj->bij", A, B)`.
 
+            Y = torch.nn.functional.one_hot(labels.long(), num_classes=10).float()
+            loss = (-Y * P.log()).sum(dim=1).mean()
+            self.zero_grad()
+            
+            parameters = list(self.parameters())
+            b = labels.shape[0]
+            G2 = (P - Y) / b
+            GH = G2 @ self._W2.T
+            H = hidden
+            G1 = GH * (1 - H**2)
+            self._W1.grad = inputs.T @ G1 
+            self._W2.grad = H.T @ G2 
+            self._b1.grad = G1.sum(dim=0)
+            self._b2.grad = G2.sum(dim=0)
+
             # TODO: Perform the SGD update with learning rate `self._args.learning_rate`
             # for all model parameters.
+            parameters = list(self.parameters())
+            gradients = [parameter.grad for parameter in parameters]
+            with torch.no_grad():
+                for parameter, gradient in zip(parameters, gradients):
+                    # TODO: Perform the SGD update with learning rate `self._args.learning_rate`
+                    # for the parameter and computed gradient.
+                    parameter -= self._args.learning_rate * gradient
 
     def evaluate(self, dataset: MNIST.Dataset) -> float:
         self.eval()
@@ -104,12 +136,13 @@ class Model(torch.nn.Module):
             for batch in dataset.batches(self._args.batch_size):
                 # TODO: Compute the logits of the batch images as in the training,
                 # and then convert them to Numpy with `.numpy(force=True)`.
-                logits = ...
+                _, _, logits = self.forward(batch["images"])
 
                 # TODO(sgd_backpropagation): Evaluate how many batch examples were predicted
                 # correctly and increase the `correct` variable accordingly, assuming
                 # the model predicts the class with the highest logit/probability.
-                correct += ...
+                labels = batch["labels"].to(logits.device)
+                correct += (logits.argmax(dim=1) == labels).sum().item()
 
         return correct / len(dataset)
 
@@ -145,15 +178,15 @@ def main(args: argparse.Namespace) -> tuple[float, float]:
 
     for epoch in range(args.epochs):
         # TODO(sgd_backpropagation): Run the `train_epoch` with `mnist.train` dataset.
-        ...
+        model.train_epoch(mnist.train)
 
         # TODO(sgd_backpropagation): Evaluate the dev data using `evaluate` on `mnist.dev` dataset.
-        dev_accuracy = ...
+        dev_accuracy = model.evaluate(mnist.dev)
         print(f"Dev accuracy after epoch {epoch + 1} is {100 * dev_accuracy:.2f}", flush=True)
         writer.add_scalar("dev/accuracy", 100 * dev_accuracy, epoch + 1)
 
     # TODO(sgd_backpropagation): Evaluate the test data using `evaluate` on `mnist.test` dataset.
-    test_accuracy = ...
+    test_accuracy = model.evaluate(mnist.test)
     print(f"Test accuracy after epoch {epoch + 1} is {100 * test_accuracy:.2f}", flush=True)
     writer.add_scalar("test/accuracy", 100 * test_accuracy, epoch + 1)
     writer.close()

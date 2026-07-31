@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 
+import numpy as np
 import torch
 import torchmetrics
 
@@ -74,11 +75,54 @@ def main(args: argparse.Namespace) -> dict[str, float]:
     # learning rate to the console and to TensorBoard. Additionally, you can find out
     # the next learning rate to be used by printing `model.scheduler.get_last_lr()[0]`,
     # as below. Therefore, after training, this value should be `args.learning_rate_final`.
-    ...
+    start_lr = args.learning_rate 
+    final_lr = args.learning_rate_final
+    total_steps = len(train) * args.epochs
+    match args.optimizer:
+        case "SGD":
+            if args.momentum is not None:
+                optimizer = torch.optim.SGD(
+                    model.parameters(),
+                    lr=start_lr,
+                    momentum=args.momentum,
+                    nesterov=True,
+                )
+            else:
+                optimizer = torch.optim.SGD(
+                    model.parameters(),
+                    lr=start_lr
+                )
+        case "Adam":
+            optimizer = torch.optim.Adam(
+                model.parameters(),
+                lr=start_lr,
+            )
+    scheduler = None
+    match args.decay:
+        case "linear":
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1.0, 
+                end_factor= (final_lr / start_lr),
+                total_iters=total_steps,
+            )
+        case "exponential":
+            k = total_steps
+            gamma = np.float64(final_lr / start_lr) ** (np.float64(1) / np.float64(k))
+            scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                optimizer,
+                gamma=gamma
+                )
+        case "cosine":
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=total_steps,
+                eta_min=final_lr,
+            )
 
     model.configure(
-        optimizer=...,
-        scheduler=...,
+        optimizer=optimizer,
+        scheduler=scheduler,
         loss=torch.nn.CrossEntropyLoss(),
         metrics={"accuracy": torchmetrics.Accuracy("multiclass", num_classes=MNIST.LABELS)},
         logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),

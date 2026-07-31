@@ -36,8 +36,10 @@ class Model(torch.nn.Module):
         # - _W2, which is a parameter of size `[args.hidden_layer_size, MNIST.LABELS]`,
         #   initialized to `torch.randn` value with standard deviation 0.1,
         # - _b2, which is a parameter of size `[MNIST.LABELS]` initialized to zeros.
-        self._W2 = ...
-        self._b2 = ...
+        self._W2 = torch.nn.Parameter(
+            torch.randn(args.hidden_layer_size, MNIST.LABELS) * 0.1
+        )
+        self._b2 = torch.nn.Parameter(torch.zeros(MNIST.LABELS))
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         # TODO: Define the computation of the network. Notably:
@@ -49,7 +51,13 @@ class Model(torch.nn.Module):
         # - then multiply it by `self._W1` and then add `self._b1`,
         # - apply `torch.tanh`,
         # - finally, multiply the result by `self._W2` and then add `self._b2`.
-        return ...
+        inputs = inputs.to(torch.float32)
+        inputs = inputs / 255
+        inputs = inputs.reshape([inputs.shape[0], -1])
+        x = inputs @ self._W1 + self._b1
+        x = torch.tanh(x)
+        x = x @ self._W2 + self._b2
+        return x
 
     def train_epoch(self, dataset: MNIST.Dataset) -> None:
         self.train()
@@ -64,14 +72,14 @@ class Model(torch.nn.Module):
             # This is needed, because the data is currently on CPU, but the model might
             # be on a GPU. You can move the data using the `.to(device)` method, and you
             # can obtain the device of the model using for example `self._W1.device`.
-            images = batch["images"].to(...)
-            labels = batch["labels"].to(...)
+            device = self._W1.device
+            batch["images"] = batch["images"].to(device)
+            batch["labels"] = batch["labels"].to(device)
 
             # TODO: Compute the predicted logits of the batch images by calling `self(...)`.
-            logits = ...
-
+            logits = self.forward(batch["images"])
             # TODO: Compute the probabilities of the batch images using `torch.softmax`.
-            probabilities = ...
+            probabilities = torch.nn.functional.softmax(logits, dim=1)
 
             # TODO: Manually compute the loss (without `torch.nn.functional.cross_entropy`)
             # as follows:
@@ -83,17 +91,23 @@ class Model(torch.nn.Module):
             #     by suitably indexing the predicted probabilities by the gold labels.
             #   Note that it might be necessary to convert the labels from bytes to `torch.int64`.
             # - Finally, compute the average across the batch examples.
-            loss = ...
+            
+            # i know that logits shape is (n x 10) where n = len(batch["images"])
+            labels = batch["labels"]
+            labels = torch.nn.functional.one_hot(labels.long(), num_classes=10).float()
+            # dim = 1 to eliminate the columns
+            loss = (-labels * probabilities.log()).sum(dim=1).mean()
 
             # We create a list of all parameters. Note that a `torch.nn.Module` automatically
-            # tracks its parameters, so we could also use `list(self.parameters())`.
+            # tracks its parameters, so we could also use `list(self.parameters())`. good to know
             parameters = [self._W1, self._b1, self._W2, self._b2]
 
             # TODO: Compute the gradient of the loss with respect to the parameters using
             # the backpropagation algorithm, by
             # - first resetting the gradients of all parameters to zero with `self.zero_grad()`,
             # - then calling `loss.backward()`.
-            ...
+            self.zero_grad()
+            loss.backward()
 
             gradients = [parameter.grad for parameter in parameters]
             with torch.no_grad():
@@ -101,7 +115,7 @@ class Model(torch.nn.Module):
                     # TODO: Perform the SGD update with learning rate `self._args.learning_rate`
                     # for the parameter and computed gradient. You can modify the
                     # parameter value directly with `-=`, or you can use `parameter.sub_`.
-                    ...
+                    parameter -= self._args.learning_rate * gradient
 
     def evaluate(self, dataset: MNIST.Dataset) -> float:
         self.eval()
@@ -111,13 +125,15 @@ class Model(torch.nn.Module):
             for batch in dataset.batches(self._args.batch_size):
                 # TODO: Compute the logits of the batch images as in the training,
                 # and then convert them to Numpy with `.numpy(force=True)`.
-                logits = ...
+                device = self._W1.device
+                batch["images"].to(device)
+                batch["labels"].to(device)
+                logits = self.forward(batch["images"])
 
                 # TODO: Evaluate how many batch examples were predicted
                 # correctly and increase the `correct` variable accordingly, assuming
                 # the model predicts the class with the highest logit/probability.
-                correct += ...
-
+                correct += (logits.argmax(dim=1) == batch["labels"]).sum()
         return correct / len(dataset)
 
 
@@ -152,15 +168,15 @@ def main(args: argparse.Namespace) -> tuple[float, float]:
 
     for epoch in range(args.epochs):
         # TODO: Run the `train_epoch` with `mnist.train` dataset.
-        ...
+        model.train_epoch(mnist.train)
 
         # TODO: Evaluate the dev data using `evaluate` on `mnist.dev` dataset.
-        dev_accuracy = ...
+        dev_accuracy = model.evaluate(mnist.dev)
         print(f"Dev accuracy after epoch {epoch + 1} is {100 * dev_accuracy:.2f}", flush=True)
         writer.add_scalar("dev/accuracy", 100 * dev_accuracy, epoch + 1)
 
     # TODO: Evaluate the test data using `evaluate` on `mnist.test` dataset.
-    test_accuracy = ...
+    test_accuracy = model.evaluate(mnist.test)
     print(f"Test accuracy after epoch {epoch + 1} is {100 * test_accuracy:.2f}", flush=True)
     writer.add_scalar("test/accuracy", 100 * test_accuracy, epoch + 1)
     writer.close()
