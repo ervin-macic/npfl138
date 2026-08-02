@@ -60,10 +60,14 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
         print("Done")
 
     individual_accuracies, ensemble_accuracies = [], []
+    accuracy = torchmetrics.Accuracy("multiclass", num_classes=MNIST.LABELS)
+    labels = torch.cat([y for _, y in dev])
+    ensemble_logits = None 
     for model in range(args.models):
         # TODO: Compute the accuracy on the dev set for the individual `models[model]`.
-        individual_accuracy = ...
-
+        metrics = models[model].evaluate(dev)
+        individual_accuracy = metrics["test:accuracy"]
+        
         # TODO: Compute the accuracy on the dev set for the ensemble `models[0:model+1]`.
         #
         # Generally you can choose one of the following approaches:
@@ -76,7 +80,12 @@ def main(args: argparse.Namespace) -> tuple[list[float], list[float]]:
         #    on the `dev` dataloader (with `data_with_labels=True` to indicate the dataloader
         #    also contains the labels) and average the predicted distributions. To measure
         #    accuracy, either do it completely manually or use `torchmetrics.Accuracy`.
-        ensemble_accuracy = ...
+        preds = torch.stack(list(models[model].predict(dev, data_with_labels=True)))
+        if ensemble_logits is None:
+            ensemble_logits = preds
+        else:
+            ensemble_logits += preds 
+        ensemble_accuracy = accuracy(ensemble_logits / (model + 1), labels)
 
         # Store the accuracies.
         individual_accuracies.append(individual_accuracy)
