@@ -113,6 +113,7 @@ class Model(npfl138.TrainableModule):
         x = self.input_proj(x)
         x = self.res_blocks(x)
         return self.output(x)
+    
 class EnsembleModel(npfl138.TrainableModule):
     def __init__(self, models):
         super().__init__()

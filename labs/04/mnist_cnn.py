@@ -11,6 +11,7 @@ from npfl138.datasets.mnist import MNIST
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
 parser.add_argument("--batch_size", default=50, type=int, help="Batch size.")
+# --cnn non-symmetrically important argument here, carries a lot of info
 parser.add_argument("--cnn", default=None, type=str, help="CNN architecture.")
 parser.add_argument("--epochs", default=10, type=int, help="Number of epochs.")
 parser.add_argument("--recodex", default=False, action="store_true", help="Evaluation in ReCodEx.")
@@ -26,10 +27,19 @@ class Dataset(npfl138.TransformedDataset):
         label = example["label"]  # a torch.Tensor with a single integer representing the label
         return image, label  # return an (input, target) pair
 
+class ResidualBlock(torch.nn.Module):
+    def __init__(self, layers):
+        super().__init__()
+        self.block = layers
+
+    def forward(self, x):
+        return torch.relu(x + self.block(x))
 
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
-        # TODO: Add CNN layers specified by `args.cnn`, which contains
+        super().__init__()
+        self._args = args
+        # TODO: Add CNN layers specified by `args.cnn` (e.g. --cnn=CB-16-5-2-valid,M-3-2,F,H-100,D-0.5), which contains
         # a comma-separated list of the following layers:
         # - `C-channels-kernel_size-stride-padding`: Add a convolutional layer with ReLU
         #   activation and specified number of channels, kernel size, stride and padding.
@@ -63,9 +73,87 @@ class Model(npfl138.TrainableModule):
         # During `__init__`, these layers do not allocate their parameters, and only do so when
         # they are first called on a tensor, at which point the number of input features is known.
         # During this first call they also change themselves to the corresponding `torch.nn.Linear` etc.
+        def parse_blueprint(blueprint: str):
+            depth = 0 
+            current = []
+            layers = []
+            for c in blueprint:
+                if c == '[':
+                    depth += 1
+                elif c == ']':
+                    depth -= 1
+                if c == ',' and depth == 0:
+                    layers.append("".join(current))
+                    current = []       
+                else:
+                    current.append(c)
+            if current:
+                layers.append("".join(current))
+            return layers
+        
+        def construct_model(blueprint: str):
+            layers = torch.nn.Sequential()
+            for specification in parse_blueprint(blueprint):
+                if specification[0] == 'R':
+                    inside = specification[3:-1]
+                    layers.append(ResidualBlock(construct_model(inside)))
+                    continue 
 
+                params = specification.split("-")
+                match params[0]:
+                    case "C":
+                        # C-channels-kernel_size-stride-padding
+                        channels, kernel_size, stride = map(int, params[1:-1])
+                        padding = params[-1]
+                        if padding not in ("same", "valid"):
+                            padding = int(padding)
+                        layers.extend([
+                            torch.nn.LazyConv2d(
+                                channels,
+                                kernel_size,
+                                stride=stride,
+                                padding=padding,
+                            ),
+                            torch.nn.ReLU(),
+                            ])
+                    case "CB":
+                        # CB-channels-kernel_size-stride-padding
+                        channels, kernel_size, stride = map(int, params[1:-1])
+                        padding = params[-1]
+                        if padding not in ("same", "valid"):
+                            padding = int(padding)
+                        layers.extend([
+                            torch.nn.LazyConv2d(
+                                channels,
+                                kernel_size,
+                                stride=stride,
+                                padding=padding,
+                                bias=False,
+                            ),
+                            torch.nn.LazyBatchNorm2d(),
+                            torch.nn.ReLU(),
+                            ])
+                    case "M":
+                        # M-pool_size-stride
+                        pool_size, stride = map(int, params[1:])
+                        layers.append(
+                            torch.nn.MaxPool2d(pool_size, stride),
+                        )
+                    case "F":
+                        layers.append(torch.nn.Flatten())
+                    case "H":
+                        # H-hidden_layer_size
+                        hidden_layer_size = int(params[-1])
+                        layers.append(torch.nn.LazyLinear(out_features=hidden_layer_size))
+                        layers.append(torch.nn.ReLU())
+                    case "D":
+                        dropout = float(params[-1])
+                        layers.append(torch.nn.Dropout(dropout))
+            return layers
+
+        self.model = construct_model(args.cnn)
         # TODO: Finally, add the final Linear output layer with `MNIST.LABELS` units.
-        ...
+        self.model.append(torch.nn.LazyLinear(out_features=MNIST.LABELS))
 
         # TODO: Note that you can construct a `TrainableModule` in two ways:
         # - either you create a `torch.nn.Module` (or a `torch.nn.Sequential` module) representing
@@ -73,7 +161,8 @@ class Model(npfl138.TrainableModule):
         # - or you start by calling `super().__init__()` without arguments and then assign the
         #   layers as attributes of `self`; in this case, you also need to implement the `forward`
         #   method that performs the forward pass through the model.
-
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.model(x)
 
 def main(args: argparse.Namespace) -> dict[str, float]:
     # Set the random seed and the number of threads.
