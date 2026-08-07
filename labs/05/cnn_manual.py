@@ -45,7 +45,18 @@ class Convolution:
         # manually iterate through the individual pixels, batch examples,
         # input channels, or output channels. However, you can manually
         # iterate through the kernel size.
-        output = ...
+        S = self._stride
+        K = self._kernel_size
+        N, H, W, C_in = inputs.shape
+        H_out = (H - K) // S + 1
+        W_out = (W - K) // S + 1
+        output = torch.zeros(N, H_out, W_out, self._channels, dtype=inputs.dtype, device=inputs.device)
+        for m in range(K):
+            for n in range(K):
+                kernel_slice = self._kernel[m, n]
+                patch = inputs[:, m:m+H_out*S:S, n:n+W_out*S:S, :]
+                output += torch.einsum("nhwc,co->nhwo", patch, kernel_slice)
+        output += self._bias
 
         # If requested, verify that `output` contains a correct value.
         if self._verify:
@@ -53,8 +64,7 @@ class Convolution:
                 inputs.movedim(-1, 1), self._kernel.permute(3, 2, 0, 1), self._bias, self._stride)).movedim(1, -1)
             np.testing.assert_allclose(output.detach().numpy(), reference.detach().numpy(), atol=1e-4,
                                        err_msg="Forward pass differs!")
-
-        return output
+        return torch.relu(output)
 
     def backward(
         self, inputs: torch.Tensor, outputs: torch.Tensor, outputs_gradient: torch.Tensor
@@ -65,7 +75,21 @@ class Convolution:
         # - the `inputs` layer,
         # - `self._kernel`,
         # - `self._bias`.
-        inputs_gradient, kernel_gradient, bias_gradient = ..., ..., ...
+        outputs_gradient = outputs_gradient * (outputs > 0)
+        S = self._stride
+        K = self._kernel_size
+        N, H, W, C_in = inputs.shape
+        inputs_gradient = torch.zeros_like(inputs)
+        H_out = (H - K) // S + 1
+        W_out = (W - K) // S + 1
+        kernel_gradient = torch.zeros_like(self._kernel)
+        for m in range(K):
+            for n in range(K):
+                kernel_slice = self._kernel[m, n]
+                patch = inputs[:, m:m+H_out*S:S, n:n+W_out*S:S, :]
+                inputs_gradient[:, m:m+H_out*S:S, n:n+W_out*S:S, :] += torch.einsum("nhwo,co->nhwc", outputs_gradient, kernel_slice)
+                kernel_gradient[m,n] = torch.einsum("nhwc,nhwo->co", patch, outputs_gradient)
+        bias_gradient = outputs_gradient.sum(dim=(0, 1, 2))
 
         # If requested, verify that the three computed gradients are correct.
         if self._verify:
