@@ -52,24 +52,40 @@ class ParitySequences:
 class Model(npfl138.TrainableModule):
     def __init__(self, args: argparse.Namespace) -> None:
         super().__init__()
-        # Construct the required layers.
 
-        # TODO: The sequence should be processed using an RNN with type `args.rnn` (values
-        # "LSTM", "GRU", "RNN" corresponding to `torch.nn.LSTM`, `torch.nn.GRU`, `torch.nn.RNN`),
-        # and with dimensionality `args.rnn_dim`.
-        ...
+        model = torch.nn.Sequential()
 
-        # TODO: If `args.hidden_layer` is nonzero, the result of the RNN should be processed
-        # by a fully connected layer with `args.hidden_layer` units and ReLU activation.
-        ...
+        match args.rnn:
+            case "LSTM":
+                self.rnn = torch.nn.LSTM(
+                        input_size=args.sequence_dim,
+                        hidden_size=args.rnn_dim,
+                        batch_first=True
+                    )
+            case "GRU":
+                self.rnn = torch.nn.GRU(
+                        input_size=args.sequence_dim,
+                        hidden_size=args.rnn_dim,
+                        batch_first=True
+                    )
+            case "RNN":
+                self.rnn = torch.nn.RNN(
+                        input_size=args.sequence_dim,
+                        hidden_size=args.rnn_dim,
+                        batch_first=True
+                    )
 
-        # TODO: The predictions are generated using a fully connected output layer
-        # with one output and sigmoid activation.
-        ...
+        self.fc = torch.nn.Sequential()
+        if args.hidden_layer != 0:
+            self.fc.append(torch.nn.LazyLinear(args.hidden_layer))
+            self.fc.append(torch.nn.ReLU())
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        # TODO: Process the input sequence through the RNN and the other layers.
-        ...
+        self.fc.append(torch.nn.LazyLinear(1))
+        self.fc.append(torch.nn.Sigmoid())
+
+    def forward(self, inputs):
+        output, hidden_state = self.rnn(inputs)
+        return self.fc(output)
 
 
 def main(args: argparse.Namespace) -> dict[str, float]:
@@ -96,7 +112,7 @@ def main(args: argparse.Namespace) -> dict[str, float]:
         def gradient_clipping(optimizer, _args, _kwargs):
             # TODO: Implement gradient clipping using `torch.nn.utils.clip_grad_norm_`,
             # clipping the gradient if its L2 norm is larger than `args.clip_gradient`.
-            ...
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=args.clip_gradient)
         optimizer.register_step_pre_hook(gradient_clipping)
 
     model.configure(

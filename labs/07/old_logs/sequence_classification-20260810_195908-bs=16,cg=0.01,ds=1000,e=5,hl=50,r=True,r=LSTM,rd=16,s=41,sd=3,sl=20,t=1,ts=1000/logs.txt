@@ -1,0 +1,5 @@
+Epoch 1/5 0.2s loss=0.6929 accuracy=0.4999 dev:loss=0.6903 dev:accuracy=0.5113
+Epoch 2/5 0.2s loss=0.6894 accuracy=0.5148 dev:loss=0.6876 dev:accuracy=0.5185
+Epoch 3/5 0.2s loss=0.6860 accuracy=0.5144 dev:loss=0.6833 dev:accuracy=0.5152
+Epoch 4/5 0.2s loss=0.6795 accuracy=0.5156 dev:loss=0.6741 dev:accuracy=0.5189
+Epoch 5/5 0.2s loss=0.6643 accuracy=0.5335 dev:loss=0.6534 dev:accuracy=0.5590

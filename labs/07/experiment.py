@@ -29,8 +29,8 @@ class Dataset(npfl138.TransformedDataset):
         # - a PyTorch tensor of integer tag ids as targets.
         # To create the ids, use `string_vocab` of `self.dataset.words` and `self.dataset.tags`.
         
-        word_ids = torch.tensor(self.dataset.words.string_vocab.indices(example["words"]))
-        tag_ids = torch.tensor(self.dataset.tags.string_vocab.indices(example["tags"]))
+        word_ids = self.dataset.words.string_vocab.indices(example["words"])
+        tag_ids = self.dataset.tags.string_vocab.indices(example["tags"])
         return word_ids, tag_ids
 
     def collate(self, batch):
@@ -62,7 +62,7 @@ class Model(npfl138.TrainableModule):
         # and we will sum the outputs of forward and backward directions.
         match args.rnn:
             case "LSTM":
-                self._word_rnn = torch.nn.LSTM(input_size=args.we_dim, hidden_size=args.rnn_dim, bidirectional=True)
+                self._word_rnn = torch.nn.RNN(input_size=args.we_dim, hidden_size=args.rnn_dim, bidirectional=True)
             case "GRU":
                 self._word_rnn = torch.nn.GRU(input_size=args.we_dim, hidden_size=args.rnn_dim, bidirectional=True)
 
@@ -80,22 +80,22 @@ class Model(npfl138.TrainableModule):
         # the length of each sentence in the batch (by counting non-`MorphoDataset.PAD` tokens);
         # note that these lengths must be on CPU, so you might need to use the `.cpu()` method.
         # Finally, also pass `batch_first=True` and `enforce_sorted=False` to the call.
-        lengths = (word_ids != MorphoDataset.PAD).sum(dim=1).cpu()
-        packed = torch.nn.utils.rnn.pack_padded_sequence(hidden, lengths=lengths, batch_first=True, enforce_sorted=False)
+        lengths = 
+        packed = torch.nn.utils.rnn.pack_padded_sequence(hidden, lengths=, batch_first=True, enforce_sorted=False)
 
         # TODO: Pass the `PackedSequence` through the RNN, choosing the appropriate output.
         packed, _ = self._word_rnn(packed)
 
         # TODO: Unpack the RNN output using the `torch.nn.utils.rnn.pad_packed_sequence` with
         # `batch_first=True` argument. Then sum the outputs of forward and backward directions.
-        hidden, _ = torch.nn.utils.rnn.pad_packed_sequence(packed, batch_first=True)
-        hidden = (hidden[:, :, :self._word_rnn.hidden_size] + hidden[:, :, self._word_rnn.hidden_size:])
+        hidden = torch.nn.utils.rnn.pad_packed_sequence(batch_first=True)
 
         # TODO: Pass the RNN output through the output layer. Such an output has a shape
         # `[batch_size, sequence_length, num_tags]`, but the loss and the metric expect
         # the `num_tags` dimension to be in front (`[batch_size, num_tags, sequence_length]`),
         # so you need to reorder the dimensions.
-        hidden = self._output_layer(hidden).permute(0, 2, 1)
+        hidden = ...
+
         return hidden
 
 
@@ -110,29 +110,6 @@ def main(args: argparse.Namespace) -> dict[str, float]:
     # Prepare the data for training.
     train = Dataset(morpho.train).dataloader(batch_size=args.batch_size, shuffle=True)
     dev = Dataset(morpho.dev).dataloader(batch_size=args.batch_size)
-
-    # Create the model and train.
-    model = Model(args, morpho.train)
-
-    model.configure(
-        # TODO: Create the Adam optimizer.
-        optimizer=torch.optim.Adam(model.parameters()),
-        # TODO: Use the usual `torch.nn.CrossEntropyLoss` loss function. Additionally,
-        # pass `ignore_index=morpho.PAD` to the constructor so that the padded
-        # tags are ignored during the loss computation. Note that the loss
-        # expects the input to be of shape `[batch_size, num_tags, sequence_length]`.
-        loss=torch.nn.CrossEntropyLoss(ignore_index=morpho.PAD),
-        # TODO: Create a `torchmetrics.Accuracy` metric, passing "multiclass" as
-        # the first argument, `num_classes` set to the number of unique tags, and
-        # again `ignore_index=morpho.PAD` to ignore the padded tags.
-        metrics={"accuracy": torchmetrics.Accuracy("multiclass", num_classes=len(morpho.train.tags.string_vocab), ignore_index=morpho.PAD)},
-        logdir=npfl138.format_logdir("logs/{file-}{timestamp}{-config}", **vars(args)),
-    )
-
-    logs = model.fit(train, dev=dev, epochs=args.epochs)
-
-    # Return development metrics for ReCodEx to validate.
-    return {metric: value for metric, value in logs.items() if metric.startswith("dev:")}
 
 
 if __name__ == "__main__":
